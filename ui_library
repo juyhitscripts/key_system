@@ -1,0 +1,989 @@
+local Players = game:GetService("Players")
+local plr = Players.LocalPlayer
+local mouse = plr:GetMouse()
+local clock = os.clock
+local rgb = Color3.fromRGB
+local v2 = Vector2.new
+
+local ImGUI = {}
+ImGUI.__index = ImGUI
+
+local KEYMAP = {
+    [0x41]="a",[0x42]="b",[0x43]="c",[0x44]="d",[0x45]="e",[0x46]="f",
+    [0x47]="g",[0x48]="h",[0x49]="i",[0x4A]="j",[0x4B]="k",[0x4C]="l",
+    [0x4D]="m",[0x4E]="n",[0x4F]="o",[0x50]="p",[0x51]="q",[0x52]="r",
+    [0x53]="s",[0x54]="t",[0x55]="u",[0x56]="v",[0x57]="w",[0x58]="x",
+    [0x59]="y",[0x5A]="z",
+    [0x20]=" ",
+    [0x30]="0",[0x31]="1",[0x32]="2",[0x33]="3",[0x34]="4",[0x35]="5",
+    [0x36]="6",[0x37]="7",[0x38]="8",[0x39]="9",
+}
+
+
+local BLACK = rgb(20, 20, 20)
+local SURFACE = rgb(36, 36, 36)
+local BORDER = rgb(41, 74, 122)
+local WHITE = rgb(230, 230, 230)
+local ACCENT = rgb(36, 36, 36)
+
+function ImGUI.new(title)
+    local self = setmetatable({}, ImGUI)
+
+    self.Title = title or ""
+    self.X, self.Y = 520, 190
+    self.W, self.H = 290, 210
+    self.Open = true
+    self.Visible = true 
+
+    self.Tabs = {}
+    self.CurrentTab = nil
+
+    -- Drawings
+    self.Drawings = {
+        MainBase = Drawing.new("Square"),
+        Crust = Drawing.new("Square"),
+        Border = Drawing.new("Square"),
+        Navbar = Drawing.new("Square"),
+        Title = Drawing.new("Text"),
+        TabBar = Drawing.new("Square")
+    }
+
+    self:Init()
+    self:MakeDraggable()
+    self:UpdateLoop()
+    self:MakeResizable() -- new
+
+    return self
+end
+
+function ImGUI:Init()
+    local d = self.Drawings
+    d.MainBase.Filled = true
+    d.MainBase.Color = SURFACE
+    d.MainBase.Visible = true
+    d.Crust.Filled = false
+    d.Crust.Thickness = 1
+    d.Crust.Color = BLACK
+    d.Crust.Visible = true
+    d.Border.Filled = false
+    d.Border.Thickness = 1
+    d.Border.Color = BORDER
+    d.Border.Visible = false
+    d.Navbar.Filled = true
+    d.Navbar.Color = BORDER
+    d.Navbar.Visible = true
+    d.Title.Text = self.Title
+    d.Title.Color = WHITE
+    d.Title.Outline = true
+    d.Title.Visible = true
+    d.TabBar.Filled = true
+    d.TabBar.Color = rgb(24, 23, 23)
+    d.TabBar.Visible = true
+    self.Resizer = Drawing.new("Square")
+    self.Resizer.Filled = true
+    self.Resizer.Color = rgb(64, 106, 158)
+    self.Resizer.Visible = true
+    self.Resizer.Size = v2(15, 15)
+    d.Resizer = self.Resizer
+    d.Resizer.Position = v2(self.X + self.W - 15, self.Y + self.H - 15)
+    d.Resizer.Size = v2(15, 15)
+    d.Resizer.Visible = self.Visible
+end
+function ImGUI:MakeResizable()
+    local resizing = false
+    local dragOffset = v2()
+    spawn(
+        function()
+            while true do
+                local mx, my = mouse.X, mouse.Y
+                local pos = v2(self.X + self.W - 15, self.Y + self.H - 15)
+                local size = v2(15, 15)
+                local hovering = mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y
+                if hovering and iskeypressed(0x01) then
+                    if not resizing then
+                        resizing = true
+                        dragOffset = v2(self.X + self.W, self.Y + self.H) - v2(mx, my)
+                    end
+                end
+                if resizing then
+                    if iskeypressed(0x01) then
+                        self.W = math.max(200, mx + dragOffset.X - self.X)
+                        self.H = math.max(150, my + dragOffset.Y - self.Y)
+                    else
+                        resizing = false
+                    end
+                end
+
+                task.wait()
+            end
+        end
+    )
+end
+
+function ImGUI:MakeDraggable()
+    local navbar = self.Drawings.Navbar
+    local dragging = false
+    local dragOffset = v2()
+
+    spawn(
+        function()
+            while true do
+                local mx, my = mouse.X, mouse.Y
+                local mpos = v2(mx, my)
+                local npos = navbar.Position
+                local nsize = navbar.Size
+
+                local hovering = mx >= npos.X and mx <= npos.X + nsize.X and my >= npos.Y and my <= npos.Y + nsize.Y
+
+                if hovering and iskeypressed(0x01) then
+                    if not dragging then
+                        dragging = true
+                        dragOffset = mpos - v2(self.X, self.Y)
+                    end
+                end
+
+                if dragging then
+                    if iskeypressed(0x01) then
+                        self.X = mpos.X - dragOffset.X
+                        self.Y = mpos.Y - dragOffset.Y
+                    else
+                        dragging = false
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+end
+
+function ImGUI:AddTab(name)
+    local tab = {}
+    tab.Name = name
+    tab.Draw = Drawing.new("Square")
+    tab.Draw.Filled = true
+    tab.Draw.Color = SURFACE
+    tab.Draw.Visible = true
+    tab.Draw.Corner = 8
+
+    tab.Text = Drawing.new("Text")
+    tab.Text.Text = name
+    tab.Text.Color = WHITE
+    tab.Text.Outline = true
+    tab.Text.Visible = true
+
+    tab.Buttons = {}
+
+    table.insert(self.Tabs, tab)
+
+    if not self.CurrentTab then
+        self.CurrentTab = tab
+    end
+
+    spawn(
+        function()
+            while true do
+                local mx, my = mouse.X, mouse.Y
+                local pos = tab.Draw.Position
+                local size = tab.Draw.Size
+
+                local hovering = mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y
+                if hovering and iskeypressed(0x01) then
+                    self.CurrentTab = tab
+                    task.wait(0.2)
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return tab
+end
+
+function ImGUI:CreateButton(tab, text, callback, options)
+    options = options or {}
+
+    local btn = {}
+
+    btn.Index = #tab.Buttons + 1
+    btn.BoxWidth = options.Width or 90
+    btn.BoxHeight = options.Height or 26
+    btn.SameRow = options.SameRow or false
+    btn.RightSide = options.RightSide or false
+
+    btn.Draw = Drawing.new("Square")
+    btn.Draw.Filled = true
+    btn.Draw.Color = rgb(41, 74, 122)
+    btn.Draw.Visible = true
+    btn.Draw.Corner = 8
+
+    btn.Text = Drawing.new("Text")
+    btn.Text.Text = text
+    btn.Text.Color = WHITE
+    btn.Text.Outline = true
+    btn.Text.Size = 13
+    btn.Text.Center = true
+    btn.Text.Visible = true
+
+    table.insert(tab.Buttons, btn)
+
+    spawn(
+        function()
+            while true do
+                if self.CurrentTab == tab and self.Visible then
+                    local pos = btn.Draw.Position
+                    local size = btn.Draw.Size
+
+                    -- Always center text
+                    btn.Text.Position =
+                        v2(
+                        pos.X + size.X / 2, -- horizontal center
+                        pos.Y + size.Y / 2 -- vertical center
+                    )
+
+                    local mx, my = mouse.X, mouse.Y
+                    local hovering = mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y
+
+                    if hovering then
+                        btn.Draw.Color = rgb(61, 133, 224)
+                        if iskeypressed(0x01) then
+                            callback()
+                            task.wait(0.25)
+                        end
+                    else
+                        btn.Draw.Color = rgb(41, 74, 122)
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return btn
+end
+
+function ImGUI:AddLabel(tab, text, options)
+    options = options or {}
+    local lbl = {}
+
+    lbl.Text = Drawing.new("Text")
+    lbl.Text.Text = text
+    lbl.Text.Color = options.TextColor or WHITE
+    lbl.Text.Outline = true
+    lbl.Text.Size = options.TextSize or 13
+    lbl.Text.Visible = true
+    lbl.Text.Center = options.Center or false
+
+    lbl.Index = #tab.Buttons + 1
+    table.insert(tab.Buttons, lbl)
+
+    return lbl
+end
+
+function ImGUI:CreateToggle(tab, text, callback, options)
+    options = options or {}
+    local defaultBoxColor = rgb(41, 74, 122)
+    local boxColor = options.BoxColor or defaultBoxColor
+    local boxWidth = options.BoxWidth or 25
+    local boxHeight = options.BoxHeight or 25
+    local textColor = options.TextColor or WHITE
+
+    local btn = {}
+
+    btn.Draw = Drawing.new("Square")
+    btn.Draw.Filled = true
+    btn.Draw.Color = boxColor
+    btn.Draw.Visible = true
+    btn.Draw.Corner = 7
+
+    btn.Text = Drawing.new("Text")
+    btn.Text.Text = text
+    btn.Text.Color = textColor
+    btn.Text.Outline = true
+    btn.Text.Size = 13
+    btn.Text.Visible = true
+
+    btn.Check = Drawing.new("Text")
+    btn.Check.Text = ""
+    btn.Check.Color = WHITE
+    btn.Check.Outline = true
+    btn.Check.Size = 15
+    btn.Check.Visible = false
+
+    btn.Toggled = false
+    btn.Index = #tab.Buttons + 1
+    btn.BoxWidth = boxWidth
+    btn.BoxHeight = boxHeight
+    table.insert(tab.Buttons, btn)
+
+    spawn(
+        function()
+            while true do
+                if self.CurrentTab == tab and self.Visible then
+                    local mx, my = mouse.X, mouse.Y
+                    local posX = self.X + 10
+                    local posY = self.Y + 60 + (btn.Index - 1) * (btn.BoxHeight + 6)
+                    local size = v2(btn.BoxWidth, btn.BoxHeight)
+                    local hovering = mx >= posX and mx <= posX + size.X and my >= posY and my <= posY + size.Y
+                    if hovering and iskeypressed(0x01) then
+                        btn.Toggled = not btn.Toggled
+                        btn.Check.Visible = btn.Toggled
+                        callback(btn.Toggled)
+                        task.wait(0.2)
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return btn
+end
+
+function ImGUI:CreateSlider(tab, text, min, max, default, callback)
+    local slider = {}
+
+    slider.Min = min
+    slider.Max = max
+    slider.Value = default or min
+    slider.Index = #tab.Buttons + 1
+    slider.BoxHeight = 10
+    slider.BoxWidth = 150
+    slider.Dragging = false
+
+    slider.Bar = Drawing.new("Square")
+    slider.Bar.Filled = true
+    slider.Bar.Color = BORDER
+    slider.Bar.Visible = true
+
+    slider.Fill = Drawing.new("Square")
+    slider.Fill.Filled = true
+    slider.Fill.Color = rgb(61, 133, 224)
+    slider.Fill.Visible = true
+
+    slider.Text = Drawing.new("Text")
+    slider.Text.Text = text .. ": " .. slider.Value
+    slider.Text.Color = WHITE
+    slider.Text.Outline = true
+    slider.Text.Size = 13
+    slider.Text.Visible = true
+
+    table.insert(tab.Buttons, slider)
+
+    spawn(
+        function()
+            while true do
+                if self.CurrentTab == tab and self.Visible then
+                    local mx, my = mouse.X, mouse.Y
+                    local pos = slider.Bar.Position
+                    local size = slider.Bar.Size
+
+                    if mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y then
+                        if iskeypressed(0x01) then
+                            slider.Dragging = true
+                        end
+                    end
+
+                    if slider.Dragging then
+                        if iskeypressed(0x01) then
+                            local pct = math.clamp((mx - pos.X) / size.X, 0, 1)
+                            slider.Value = math.floor(slider.Min + (slider.Max - slider.Min) * pct)
+                            slider.Text.Text = text .. ": " .. slider.Value -- update text
+                            callback(slider.Value)
+                        else
+                            slider.Dragging = false
+                        end
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return slider
+end
+
+function ImGUI:CreateRadio(tab, text, options, callback)
+    local radio = {}
+    radio.Options = options
+    radio.Selected = nil
+    radio.Index = #tab.Buttons + 1
+    radio.BoxHeight = 20
+    radio.BoxWidth = 20
+    radio.Buttons = {}
+
+    radio.Label = Drawing.new("Text")
+    radio.Label.Text = text
+    radio.Label.Color = WHITE
+    radio.Label.Outline = true
+    radio.Label.Size = 13
+    radio.Label.Visible = true
+
+    for i, opt in ipairs(options) do
+        local box = Drawing.new("Square")
+        box.Filled = true
+        box.Color = BORDER
+        box.Visible = true
+        box.Corner = 8
+
+        local txt = Drawing.new("Text")
+        txt.Text = opt
+        txt.Color = WHITE
+        txt.Outline = true
+        txt.Size = 13
+        txt.Visible = true
+
+        table.insert(radio.Buttons, {Box = box, Text = txt, Value = opt})
+    end
+
+    table.insert(tab.Buttons, radio)
+
+    spawn(
+        function()
+            while true do
+                if self.CurrentTab == tab and self.Visible then
+                    local mx, my = mouse.X, mouse.Y
+                    for _, btn in ipairs(radio.Buttons) do
+                        local pos = btn.Box.Position
+                        local size = btn.Box.Size
+                        if mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y then
+                            if iskeypressed(0x01) then
+                                radio.Selected = btn.Value
+                                callback(btn.Value)
+                                task.wait(0.25)
+                            end
+                        end
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return radio
+end
+
+function ImGUI:CreateDropdown(tab, text, options, callback, optionsEx)
+    local dd = {}
+    optionsEx = optionsEx or {}
+    dd.RightSide = optionsEx.RightSide or false
+    dd.SameRow = optionsEx.SameRow or false
+    dd.Options = options
+    dd.Selected = options[1]
+    dd.Opened = false
+    dd.Index = #tab.Buttons + 1
+    dd.BoxWidth = 150
+    dd.BoxHeight = 22
+
+    dd.Box = Drawing.new("Square")
+    dd.Box.Filled = true
+    dd.Box.Color = BORDER
+    dd.Box.Visible = true
+    dd.Box.Corner = 8
+
+    dd.Text = Drawing.new("Text")
+    dd.Text.Text = text
+    dd.Text.Color = WHITE
+    dd.Text.Outline = true
+    dd.Text.Size = 13
+    dd.Text.Visible = true
+
+    dd.ValueText = Drawing.new("Text")
+    dd.ValueText.Text = dd.Selected
+    dd.ValueText.Color = WHITE
+    dd.ValueText.Outline = true
+    dd.ValueText.Size = 13
+    dd.ValueText.Center = false
+    dd.ValueText.Visible = true
+
+    dd.OptionTexts = {}
+    dd.RightSide = optionsEx.RightSide or false
+    
+
+    for _, opt in ipairs(options) do
+        local t = Drawing.new("Text")
+        t.Text = opt
+        t.Color = WHITE
+        t.Outline = true
+        t.Size = 13
+        t.Visible = false
+        table.insert(dd.OptionTexts, t)
+    end
+
+    table.insert(tab.Buttons, dd)
+
+    spawn(
+        function()
+            while true do
+                if self.CurrentTab == tab and self.Visible then
+                    local mx, my = mouse.X, mouse.Y
+                    local pos = dd.Box.Position
+                    local size = dd.Box.Size
+
+                    if mx >= pos.X and mx <= pos.X + size.X and my >= pos.Y and my <= pos.Y + size.Y then
+                        if iskeypressed(0x01) then
+                            dd.Opened = not dd.Opened
+                            task.wait(0.25)
+                        end
+                    end
+
+                    if dd.Opened then
+                        for i, optText in ipairs(dd.OptionTexts) do
+                            local opY = pos.Y + dd.BoxHeight + (i - 1) * dd.BoxHeight
+                            if mx >= pos.X and mx <= pos.X + size.X and my >= opY and my <= opY + dd.BoxHeight then
+                                if iskeypressed(0x01) then
+                                    dd.Selected = optText.Text
+                                    dd.ValueText.Text = dd.Selected
+                                    dd.Opened = false
+                                    callback(dd.Selected)
+                                    task.wait(0.25)
+                                    task.wait(0.25)
+                                end
+                            end
+                        end
+                    end
+                end
+                task.wait()
+            end
+        end
+    )
+
+    return dd
+end
+
+function ImGUI:CreateSearchBox(tab, placeholder, items, onSelect)
+    local search = {}
+
+    search.TextValue = ""
+    search.Placeholder = placeholder or "Type here..."
+    search.Items = items
+    search.Results = {}
+    search.Focused = false
+
+    search.Index = #tab.Buttons + 1
+    search.BoxWidth = 200
+    search.BoxHeight = 24
+    search.MaxResults = 10
+
+    search.Box = Drawing.new("Square")
+    search.Box.Filled = true
+    search.Box.Color = rgb(41, 74, 122)
+    search.Box.Visible = true
+    search.Box.Corner = 8
+
+    search.Text = Drawing.new("Text")
+    search.Text.Text = search.Placeholder
+    search.Text.Color = rgb(180, 180, 180)
+    search.Text.Outline = true
+    search.Text.Size = 13
+    search.Text.Visible = true
+
+    search.ResultTexts = {}
+    for i = 1, search.MaxResults do
+        local t = Drawing.new("Text")
+        t.Text = ""
+        t.Color = rgb(180, 180, 180)
+        t.Outline = true
+        t.Size = 13
+        t.Visible = false
+        table.insert(search.ResultTexts, t)
+    end
+
+    table.insert(tab.Buttons, search)
+
+
+local lastPressed = {}
+
+spawn(function()
+    while true do
+        if search.Focused then
+            for key, letter in pairs(KEYMAP) do
+                if iskeypressed(key) and (not lastPressed[key] or clock() - lastPressed[key] > 0.15) then
+                    search.TextValue ..= letter
+                    lastPressed[key] = clock()
+                end
+            end
+
+            -- Backspace
+            if iskeypressed(0x08) and (not lastPressed[0x08] or clock() - lastPressed[0x08] > 0.15) then
+                search.TextValue = search.TextValue:sub(1, -2)
+                lastPressed[0x08] = clock()
+            end
+
+            -- ENTER
+            if iskeypressed(0x0D) and (not lastPressed[0x0D] or clock() - lastPressed[0x0D] > 0.2) then
+                search.Focused = false
+                lastPressed[0x0D] = clock()
+            end
+
+            -- ESC
+            if iskeypressed(0x1B) and (not lastPressed[0x1B] or clock() - lastPressed[0x1B] > 0.2) then
+                search.Focused = false
+                lastPressed[0x1B] = clock()
+            end
+        end
+        task.wait()
+    end
+end)
+
+
+
+
+    -- Mouse interaction
+spawn(function()
+    while true do
+        if self.CurrentTab == tab and self.Visible then
+            local mx, my = mouse.X, mouse.Y
+            local pos = search.Box.Position
+            local size = search.Box.Size
+
+            local hovering =
+                mx >= pos.X and mx <= pos.X + size.X and
+                my >= pos.Y and my <= pos.Y + size.Y
+
+            -- Click INSIDE → focus
+            if hovering and iskeypressed(0x01) then
+                search.Focused = true
+                task.wait(0.2)
+
+            -- Click OUTSIDE → unfocus
+            elseif iskeypressed(0x01) then
+                search.Focused = false
+                task.wait(0.2)
+            end
+        end
+        task.wait()
+    end
+end)
+
+
+    -- Filtering logic
+    spawn(function()
+        while true do
+            search.Results = {}
+
+            if search.TextValue ~= "" then
+                local input = search.TextValue:lower()
+                for _, name in ipairs(search.Items) do
+                    if name:lower():find(input, 1, true) then
+                        table.insert(search.Results, name)
+                        if #search.Results >= search.MaxResults then
+                            break
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.05)
+        end
+    end)
+
+    -- Click results
+    spawn(function()
+        while true do
+            if self.CurrentTab == tab and self.Visible then
+                local mx, my = mouse.X, mouse.Y
+
+                for i, txt in ipairs(search.ResultTexts) do
+                    if txt.Visible then
+                        local p = txt.Position
+                        local hovering =
+                            mx >= p.X and mx <= p.X + search.BoxWidth and
+                            my >= p.Y and my <= p.Y + 16
+
+                        if hovering and iskeypressed(0x01) then
+                            search.TextValue = txt.Text
+                            search.Focused = false
+                            onSelect(txt.Text)
+                            task.wait(0.25)
+                        end
+                    end
+                end
+            end
+            task.wait()
+        end
+    end)
+
+    return search
+end
+
+
+function ImGUI:Update()
+    local d = self.Drawings
+    local pos = v2(self.X, self.Y)
+    local size = v2(self.W, self.H)
+
+    -- Visibility
+    for _, draw in pairs(d) do
+        draw.Visible = self.Visible
+    end
+
+    -- Main frame
+    d.MainBase.Position = pos
+    d.MainBase.Size = size
+    d.MainBase.Corner = 15
+
+    d.Crust.Position = pos
+    d.Crust.Size = size
+    d.Crust.Corner = 15
+
+    d.Border.Position = pos + v2(1, 1)
+    d.Border.Size = size - v2(2, 2)
+    d.Border.Corner = 15
+    d.Border.Visible = false
+
+    -- Navbar
+    d.Navbar.Position = pos + v2(5, 3)
+    d.Navbar.Size = v2(self.W - 10, 24)
+    d.Navbar.Corner = 15
+    d.Title.Position = pos + v2(12, 9.2)
+
+    -- Tabs background
+    d.TabBar.Position = pos + v2(3, 29)
+    d.TabBar.Size = v2(self.W - 6, self.H - 32)
+    d.TabBar.Corner = 10
+
+    -- Tabs
+    local tabX = pos.X + 10
+    for _, tab in ipairs(self.Tabs) do
+        tab.Draw.Position = v2(tabX, pos.Y + 33)
+        tab.Draw.Size = v2(80, 24)
+
+        tab.Text.Center = true
+        tab.Text.Position = v2(tabX + 40, pos.Y + 46)
+
+        tab.Draw.Color = (self.CurrentTab == tab) and rgb(61, 133, 224) or SURFACE
+        tab.Draw.Visible = self.Visible
+        tab.Text.Visible = self.Visible
+
+        tabX = tabX + 84
+    end
+
+    -- Elements
+    for _, tab in ipairs(self.Tabs) do
+        if self.CurrentTab == tab then
+            local offsetY = pos.Y + 60
+            local spacing = 6
+            local lastRowY = offsetY
+
+            for _, elem in ipairs(tab.Buttons) do
+                local elemH = elem.BoxHeight or 22
+                local elemW = elem.BoxWidth or math.min(150, self.W - 20)
+
+                -- LABEL
+                if elem.Text and not elem.Draw and not elem.Bar and not elem.OptionTexts and not elem.Check then
+                    elem.Text.Position = v2(pos.X + 10, offsetY)
+                    elem.Text.Visible = self.Visible
+                    offsetY = offsetY + elem.Text.Size + spacing
+                end
+
+                if elem.Box and elem.Placeholder then
+
+                    elem.Box.Position = v2(pos.X + 10, offsetY)
+                    elem.Box.Size = v2(elem.BoxWidth, elem.BoxHeight)
+                    elem.Box.Visible = self.Visible
+
+                local displayText =
+                    elem.TextValue ~= "" and elem.TextValue or elem.Placeholder
+
+                    elem.Text.Text = displayText
+                    elem.Text.Color =
+                    elem.TextValue ~= "" and WHITE or rgb(180,180,180)
+
+                    elem.Text.Position = v2(elem.Box.Position.X + 8, elem.Box.Position.Y + 5)
+                    elem.Text.Visible = self.Visible
+
+                    offsetY = offsetY + elem.BoxHeight + spacing
+
+    -- Dropdown results
+                    local shown = 0
+                        if elem.Focused and elem.Results then
+                            for i, t in ipairs(elem.ResultTexts) do
+                                local name = elem.Results[i]
+                                if name then
+                                    t.Text = name
+                                    t.Position = v2(pos.X + 18, offsetY + (shown * 16))
+                                    t.Visible = self.Visible
+                shown += 1
+            else
+                t.Visible = false
+            end
+        end
+    else
+        for _, t in ipairs(elem.ResultTexts) do
+            t.Visible = false
+        end
+    end
+    if shown > 0 then
+        offsetY = offsetY + (shown * 16) + spacing
+    end
+end
+
+
+                -- BUTTON / TOGGLE
+if elem.Draw and elem.Text and not elem.Bar and not elem.OptionTexts then
+    local drawX
+    local drawY = offsetY
+
+    if elem.SameRow then
+        drawY = lastRowY
+        drawX = pos.X + 10 + (elem.RightSide and elem.BoxWidth + 10 or 0)
+    else
+        drawX = pos.X + 10
+        lastRowY = drawY
+    end
+
+    elem.Draw.Position = v2(drawX, drawY)
+    elem.Draw.Size = v2(elemW, elemH)
+    elem.Draw.Visible = self.Visible
+
+    elem.Text.Center = true
+    elem.Text.Position = v2(drawX + elemW / 2, drawY + elemH / 2)
+    elem.Text.Visible = self.Visible
+
+    if not elem.SameRow then
+        offsetY = offsetY + elemH + spacing
+    end
+
+                -- SLIDER
+                elseif elem.Bar and elem.Fill then
+                    elem.Text.Position = v2(pos.X + 10, offsetY)
+                    elem.Text.Visible = self.Visible
+                    offsetY = offsetY + 14
+
+                    elem.Bar.Position = v2(pos.X + 10, offsetY)
+                    elem.Bar.Size = v2(math.min(150, self.W - 20), 8)
+                    elem.Bar.Visible = self.Visible
+
+                    elem.Fill.Position = elem.Bar.Position
+                    elem.Fill.Size = v2(((elem.Value - elem.Min) / (elem.Max - elem.Min)) * elem.Bar.Size.X, 8)
+                    elem.Fill.Visible = self.Visible
+
+                    offsetY = offsetY + 8 + spacing
+
+                -- RADIO
+                elseif elem.Buttons and elem.Label then
+                    elem.Label.Position = v2(pos.X + 10, offsetY)
+                    elem.Label.Visible = self.Visible
+                    offsetY = offsetY + 16
+
+                    for _, btn in ipairs(elem.Buttons) do
+                        btn.Box.Position = v2(pos.X + 10, offsetY)
+                        btn.Box.Size = v2(18, 18)
+                        btn.Text.Position = v2(pos.X + 32, offsetY + 1)
+
+                        btn.Box.Color = (elem.Selected == btn.Value)
+                            and rgb(61, 133, 224)
+                            or BORDER
+
+                        btn.Box.Visible = self.Visible
+                        btn.Text.Visible = self.Visible
+                        offsetY = offsetY + 22
+                    end
+                    offsetY = offsetY + spacing
+
+                -- DROPDOWN (LEFT OR RIGHT)
+                elseif elem.Box and elem.OptionTexts then
+                    local baseX
+                    if elem.RightSide then
+                        baseX = pos.X + self.W - elem.BoxWidth - 86
+                    else
+                        baseX = pos.X + 10
+                    end
+
+                    -- Label
+                    local drawY = elem.SameRow and lastRowY or offsetY
+
+                    elem.Text.Position = v2(baseX, drawY)
+                    elem.Text.Visible = self.Visible
+
+                    if not elem.SameRow then
+                        offsetY = offsetY + 16
+                    end
+
+
+                    -- Box
+                    elem.Box.Position = v2(baseX, drawY + 16)
+                    elem.Box.Size = v2(math.min(elem.BoxWidth, self.W - 20), elem.BoxHeight)
+                    elem.Box.Color = elem.Opened and rgb(61,133,224) or rgb(41,74,122)
+                    elem.Box.Visible = self.Visible
+
+                    elem.ValueText.Position =
+                        v2(elem.Box.Position.X + 8, elem.Box.Position.Y + elem.BoxHeight / 2 - 7)
+                    elem.ValueText.Visible = self.Visible
+
+if not elem.SameRow then
+    offsetY = offsetY + elem.BoxHeight + spacing
+    lastRowY = drawY
+end
+
+
+                    if elem.Opened then
+                        local maxY = pos.Y + self.H - 10
+                        local drawn = 0
+
+                        for i, optText in ipairs(elem.OptionTexts) do
+                            local optY = offsetY + (i - 1) * elem.BoxHeight
+                            if optY + elem.BoxHeight > maxY then break end
+
+                            optText.Position = v2(baseX + 6, optY + 3)
+                            optText.Visible = self.Visible
+                            drawn += 1
+                        end
+
+                        if not elem.SameRow then
+                            offsetY = offsetY + drawn * elem.BoxHeight + spacing
+                        end
+                    else
+                        for _, optText in ipairs(elem.OptionTexts) do
+                            optText.Visible = false
+                        end
+                    end
+                end
+
+            end
+        end
+    end
+    for _, tab in ipairs(self.Tabs) do
+        if self.CurrentTab ~= tab then
+            for _, elem in ipairs(tab.Buttons) do
+                if elem.Draw then elem.Draw.Visible = false end
+                if elem.Text then elem.Text.Visible = false end
+                if elem.Check then elem.Check.Visible = false end
+                if elem.Bar then elem.Bar.Visible = false end
+                if elem.Fill then elem.Fill.Visible = false end
+                if elem.Label then elem.Label.Visible = false end
+                if elem.Box then elem.Box.Visible = false end
+                if elem.ValueText then elem.ValueText.Visible = false end
+                if elem.OptionTexts then
+                    for _, t in ipairs(elem.OptionTexts) do
+                        t.Visible = false
+                    end
+                end
+                if elem.Buttons then
+                    for _, b in ipairs(elem.Buttons) do
+                        if b.Box then b.Box.Visible = false end
+                        if b.Text then b.Text.Visible = false end
+                    end
+                end
+            end
+        end
+    end
+
+    if self.Resizer then
+        self.Resizer.Position = v2(self.X + self.W - 15, self.Y + self.H - 15)
+        self.Resizer.Size = v2(15, 15)
+        self.Resizer.Visible = self.Visible
+    end
+end
+
+
+function ImGUI:UpdateLoop()
+    spawn(
+        function()
+            while true do
+                self:Update()
+                task.wait()
+            end
+        end
+    )
+end
