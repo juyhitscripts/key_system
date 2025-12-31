@@ -975,15 +975,3 @@ end
         self.Resizer.Visible = self.Visible
     end
 end
-
-
-function ImGUI:UpdateLoop()
-    spawn(
-        function()
-            while true do
-                self:Update()
-                task.wait()
-            end
-        end
-    )
-end
